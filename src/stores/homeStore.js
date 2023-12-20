@@ -1,52 +1,63 @@
-import {create} from 'zustand';
+import { create } from 'zustand';
 import axios from 'axios';
 import debounce from '../helpers/debounce';
 
 const homeStore = create((set) => ({
-    coins:[],
-    trending:[],
+    coins: [],
+    trending: [],
     query: '',
+    searching: false,
+    searched: false,
 
     setQuery: (e) => {
-        set({query: e.target.value})
-        homeStore.getState().searchCoins()
+        set({ query: e.target.value });
+        homeStore.getState().searchCoins();
     },
 
-    searchCoins: debounce( async () => {
-        const {query, trending} = homeStore.getState()
+    searchCoins: debounce(async () => {
+        set ({searching:true});
+        const { query, trending } = homeStore.getState();
 
-        if (query.length > 2){
+        if (query.length > 2) {
+            const res = await axios.get(`https://api.coingecko.com/api/v3/search?query=${query}`);
 
-        const res = await axios.get(`https://api.coingecko.com/api/v3/search?query=${query}`);
-        
-        const coins = res.data.coins.map (coin => {
-            return {
-                name: coin.name,
-                image: coin.large,
-                id: coin.id,
-            }
-        })
-        
-        set({coins})
-    } else {
-        set({coins:trending})
-    }
+            const coins = res.data.coins.map((coin) => {
+                return {
+                    name: coin.name,
+                    image: coin.large,
+                    id: coin.id,
+                };
+            });
+
+            set({ coins, searching:false, searched:true });
+        } else {
+            set({ coins: trending, searching:false, searched:false });
+        }
     }, 500),
 
     fetchCoins: async () => {
-   const res = await axios.get('https://api.coingecko.com/api/v3/search/trending')
-   
-   const coins = res.data.coins.map(coin =>{
-    return {
-        name: coin.item.name,
-        image: coin.item.large,
-        id: coin.item.id,
-        priceBtc: coin.item.price_btc
-    }
-   })
-   
-   set({coins, trending:coins })
-}
-}))
+        const [res, btcRes] = await Promise.all([
+            axios.get(`https://api.coingecko.com/api/v3/search/trending`),
+            axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd`),
+        ]);
 
-export default homeStore
+        const btcPrice = btcRes.data.bitcoin.usd;
+        console.log('BTC Price:', btcPrice);
+
+        const coins = res.data.coins.map((coin) => {
+            return {
+                name: coin.item.name,
+                image: coin.item.large,
+                id: coin.item.id,
+                priceBtc: coin.item.price_btc.toFixed(10),
+                priceUsd: isNaN(btcPrice) ? 0 : (coin.item.price_btc * btcPrice).toFixed(10),
+            };
+        });
+
+        console.log(coins);
+
+        set({ coins, trending: coins });
+    },
+}));
+
+export default homeStore;
